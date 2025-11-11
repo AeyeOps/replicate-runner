@@ -231,6 +231,10 @@ A: For personal/small team use, yes. For enterprise scale, add comprehensive tes
 - [Typer](https://typer.tiangolo.com/) - CLI framework
 - [Rich](https://rich.readthedocs.io/) - Terminal formatting
 
+## Acknowledgments
+
+Special thanks to [ai-toolkit](https://github.com/ostris/ai-toolkit) by [@ostris](https://github.com/ostris) - the LoRA training framework that this tool's publishing workflow is designed around. The intelligent sample selection and automated publishing features were built specifically to streamline ai-toolkit's output format.
+
 ## License
 
 MIT
