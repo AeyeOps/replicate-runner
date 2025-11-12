@@ -7,10 +7,15 @@
 REPLICATE_API_TOKEN=your-token-here
 ```
 
-2. Find the FLUX LoRA model version ID from Replicate:
+2. (Optional) Pin a specific FLUX LoRA model version:
    - Visit: https://replicate.com/lucataco/flux-dev-lora
    - Click on "Versions" tab
-   - Copy the version ID (e.g., `a22c463f959a635f1a4ff7e4d35868)
+   - Copy the version ID (e.g., `a22c463f959a635f1a4ff7e4d35868`)
+   - Provide it as a second CLI argument or append `:version` to the model name when you need repeatable runs
+
+3. (Optional) Hugging Face token for private LoRAs:
+   - Set `HF_TOKEN=hf_your_token_here` in `.env`
+   - Whenever `extra_lora`, `hf_lora`, or `lora_weights` point to `huggingface.co`, Replicate Runner automatically adds that token as `hf_api_token` so gated assets download without extra flags.
 
 ## Basic Usage
 
@@ -18,15 +23,14 @@ REPLICATE_API_TOKEN=your-token-here
 ```bash
 replicate-runner replicate run-model \
   lucataco/flux-dev-lora \
-  <version-id> \
   --param prompt:"a beautiful landscape"
 ```
+Add `<version-id>` one line above only if you need to lock to a previous model.
 
 ### With HuggingFace LoRA
 ```bash
 replicate-runner replicate run-model \
   lucataco/flux-dev-lora \
-  <version-id> \
   --param prompt:"a photo of TOK, person, portrait" \
   --param hf_lora:"steveant/steve-lora-v1.1"
 ```
@@ -35,7 +39,6 @@ replicate-runner replicate run-model \
 ```bash
 replicate-runner replicate run-model \
   lucataco/flux-dev-lora \
-  <version-id> \
   --param prompt:"a photo of TOK, person, professional headshot, studio lighting" \
   --param hf_lora:"steveant/steve-lora-v1.1" \
   --param lora_scale:0.8 \
@@ -116,10 +119,10 @@ replicate-runner hf list-models
 # Use in FLUX
 replicate-runner replicate run-model \
   lucataco/flux-dev-lora \
-  <version-id> \
   --param prompt:"a photo of TOK, person, portrait" \
   --param hf_lora:"yourusername/your-lora-name"
 ```
+Outputs land in `output/lucataco_flux-dev-lora_<timestamp>/output_*.webp`, so every run leaves images locally for review.
 
 ## Troubleshooting
 

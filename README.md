@@ -4,6 +4,14 @@
 
 A production-ready CLI tool that eliminates friction in FLUX+LoRA development pipelines through smart type inference, automated sample curation, and seamless HuggingFace publishing.
 
+## What's New
+
+- Flexible version pinning: pass version as a second arg, embed as `owner/model:version`, or even paste `owner/model/version` URLs — all normalized with conflict checks.
+- Automatic HF token injection: if `HF_TOKEN` or `HF_API_TOKEN` is set and your params reference `huggingface.co` in `extra_lora`/`hf_lora`/`lora_weights`, the CLI injects `hf_api_token` automatically.
+- Local artifacts: any Replicate `FileOutput` (images, etc.) are downloaded to `output/<model>_<timestamp>/` for easy review.
+- HF utilities: quickly list your models on Hugging Face with `hf list-models`.
+- Handy script: `scripts/run_flux_example.sh` provides a quick-start FLUX+LoRA run; override inputs via env vars.
+
 ## Value Proposition
 
 ### Smart Parameter Management
@@ -46,6 +54,7 @@ Create `.env` in project root:
 REPLICATE_API_TOKEN=r8_your_token_here
 HF_TOKEN=hf_your_token_here
 ```
+If `HF_TOKEN` (or `HF_API_TOKEN`) is set, the `replicate run-model` command automatically injects it as `hf_api_token` whenever you point `extra_lora`/`hf_lora`/`lora_weights` at `huggingface.co`, so private LoRAs just work.
 
 ## Usage Examples
 
@@ -53,13 +62,19 @@ HF_TOKEN=hf_your_token_here
 ```bash
 replicate-runner replicate run-model \
   lucataco/flux-dev-lora \
-  <version-id> \
   --param prompt:"a photo of TOK, person, portrait" \
   --param hf_lora:"youruser/your-lora" \
   --param lora_scale:0.8 \
   --param num_outputs:1 \
   --param num_inference_steps:28
 ```
+Version pinning options (use only one):
+- Second positional arg: `replicate-runner replicate run-model lucataco/flux-dev-lora <version-id>`
+- Inline: `lucataco/flux-dev-lora:<version-id>`
+- Pasted URL forms like `owner/model/version` are normalized automatically
+If you omit a version, the latest configured on Replicate is used.
+
+Successful runs automatically download any `FileOutput`s (images, etc.) into `output/<model>_<timestamp>/` so you can inspect results without copying URLs manually.
 
 ### Publish LoRA to HuggingFace
 ```bash
@@ -87,6 +102,23 @@ Training outputs:
   1737531431663__000000250_1.jpg  (step 250, prompt 1) <- SELECTED
 
 Result: 1 model file + 2 best sample images
+```
+
+### List Your HuggingFace Models
+```bash
+replicate-runner hf list-models
+# or
+replicate-runner hf list-models --user your-username --limit 20
+```
+
+### Quick FLUX Example Script
+For a ready-to-run FLUX+LoRA invocation with sensible defaults, use:
+```bash
+./scripts/run_flux_example.sh
+```
+Override anything via environment variables:
+```bash
+PROMPT="a studio portrait of TOK" LORA_SCALE=0.9 ./scripts/run_flux_example.sh
 ```
 
 ### Type Inference
@@ -199,6 +231,7 @@ replicate_runner/
 - `CLAUDE.md` - Development guide for AI assistants
 - `FLUX_LORA_EXAMPLE.md` - Complete FLUX+LoRA workflow guide
 - `replicate_runner/CLAUDE.md` - Package architecture details
+- `scripts/run_flux_example.sh` - Quick-start FLUX+LoRA runner (env-var customizable)
 
 ## Contributing
 

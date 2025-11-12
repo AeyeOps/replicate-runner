@@ -42,5 +42,7 @@ dist/
 htmlcov/
 
 # Replicate outputs
+output/
 replicate_*.webp
 t.py
+run_flux_example.sh
