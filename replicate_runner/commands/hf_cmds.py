@@ -1,14 +1,155 @@
-import typer
-from pathlib import Path
-from rich.console import Console
-from huggingface_hub import HfApi, create_repo
+import subprocess
 from collections import defaultdict
 import re
 import tempfile
+from pathlib import Path
+from typing import List
+
+import typer
+from huggingface_hub import HfApi, create_repo
+from rich.console import Console
 import yaml
+
+from replicate_runner.config_loader import ConfigLoader
+from replicate_runner.lora_catalog import (
+    LoraEntry,
+    gather_base_images,
+    load_lora_catalog,
+    resolve_collection,
+)
 
 console = Console()
 app = typer.Typer()
+loras_app = typer.Typer(help="Inspect locally configured LoRA collections.")
+app.add_typer(loras_app, name="loras")
+
+
+def _format_lora_entry(entry: LoraEntry) -> List[str]:
+    """Return formatted lines describing a LoRA entry."""
+
+    lines = [f"[bold]{entry.name}[/bold] (key: [cyan]{entry.key}[/cyan])"]
+    lines.append(f"  Repo: {entry.repo_id}")
+    lines.append(f"  Trigger: {entry.trigger}")
+    if entry.description:
+        lines.append(f"  Notes: {entry.description}")
+    if entry.default_prompt:
+        lines.append(f"  Default prompt: {entry.default_prompt}")
+    if entry.base_images:
+        lines.append(
+            f"  Base images: {len(entry.base_images)} configured"
+        )
+    return lines
+
+
+@loras_app.command("list")
+def list_lora_collections():
+    """List available LoRA collections defined in config/loras.yaml."""
+
+    catalog = load_lora_catalog()
+    if not catalog.collections:
+        console.print(
+            "[red]No LoRA collections configured. Update config/loras.yaml to add entries.[/red]"
+        )
+        raise typer.Exit(1)
+
+    console.print("[blue]Available LoRA collections:[/blue]")
+    for name, collection in catalog.collections.items():
+        count = len(collection.lora_keys)
+        description = collection.description or ""
+        console.print(f"- [bold]{name}[/bold] ({count} LoRAs) {description}")
+
+
+@loras_app.command("show")
+def show_collection(collection: str = typer.Argument(..., help="Collection name")):
+    """Display detailed information about the LoRAs within a collection."""
+
+    catalog = load_lora_catalog()
+    try:
+        collection_meta, entries = resolve_collection(catalog, collection)
+    except KeyError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1)
+
+    console.print(f"[bold blue]{collection_meta.key}[/bold blue]")
+    if collection_meta.description:
+        console.print(collection_meta.description)
+    if collection_meta.tags:
+        console.print(f"Tags: {', '.join(collection_meta.tags)}")
+    if collection_meta.default_prompt:
+        console.print(f"Collection prompt: {collection_meta.default_prompt}")
+
+    if not entries:
+        console.print("[yellow]No LoRAs attached to this collection.[/yellow]")
+        return
+
+    console.print()
+    for entry in entries:
+        for line in _format_lora_entry(entry):
+            console.print(line)
+        console.print()
+
+
+@loras_app.command("view-images")
+def view_collection_images(
+    collection: str = typer.Argument(..., help="Collection name"),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        help="List image paths without opening the configured viewer",
+    ),
+):
+    """Open all base images for the selected collection using a configured viewer."""
+
+    catalog = load_lora_catalog()
+    try:
+        _, entries = resolve_collection(catalog, collection)
+    except KeyError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1)
+
+    images = gather_base_images(entries)
+    if not images:
+        console.print("[yellow]No base images configured for this collection.[/yellow]")
+        raise typer.Exit(1)
+
+    viewer = catalog.loader.get("LORA_IMAGE_VIEWER", "")
+    if not viewer:
+        console.print(
+            "[red]Set LORA_IMAGE_VIEWER in your .env to the full path of an Ubuntu image viewer (e.g., /usr/bin/eog).[/red]"
+        )
+        raise typer.Exit(1)
+
+    existing = [path for path in images if path.exists()]
+    missing = [path for path in images if not path.exists()]
+
+    if missing:
+        console.print(
+            f"[yellow]Skipping {len(missing)} base images that were not found on disk.[/yellow]"
+        )
+        for path in missing[:5]:
+            console.print(f"  - {path}")
+
+    if not existing:
+        console.print("[red]No existing image files to display.[/red]")
+        raise typer.Exit(1)
+
+    if dry_run:
+        console.print("[blue]Dry run: viewer not launched. Images:[/blue]")
+        for path in existing:
+            console.print(f"  - {path}")
+        return
+
+    try:
+        subprocess.Popen([viewer, *map(str, existing)])
+        console.print(f"[green]Opened {len(existing)} images with {viewer}[/green]")
+    except FileNotFoundError:
+        console.print(
+            f"[red]Viewer executable '{viewer}' not found. Update LORA_IMAGE_VIEWER in your .env file.[/red]"
+        )
+        raise typer.Exit(1)
+    except Exception as exc:
+        console.print(f"[red]Failed to launch viewer: {exc}[/red]")
+        raise typer.Exit(1)
 
 
 def _extract_trigger_from_config(source_dir: Path) -> str:
@@ -156,8 +297,6 @@ def publish_lora(
         replicate-runner hf publish-hf-lora --name my-lora --source-dir ./weights --trigger "person" --private
         replicate-runner hf publish-hf-lora --name my-lora --source-dir ./lora.safetensors --username myuser --no-private
     """
-    from replicate_runner.config_loader import ConfigLoader
-
     config_loader = ConfigLoader()
     hf_token = config_loader.get("HF_TOKEN", "")
     if not hf_token:
@@ -289,7 +428,11 @@ def publish_lora(
 @app.command()
 def list_models(
     username: str = typer.Option(None, "--user", help="Filter by username (default: your account)"),
-    limit: int = typer.Option(10, "--limit", help="Maximum number of models to list"),
+    limit: int | None = typer.Option(
+        None,
+        "--limit",
+        help="Maximum number of models to list (omit for all)",
+    ),
 ):
     """
     List your HuggingFace models.
@@ -298,8 +441,6 @@ def list_models(
         replicate-runner hf list-models
         replicate-runner hf list-models --user username --limit 20
     """
-    from replicate_runner.config_loader import ConfigLoader
-
     config_loader = ConfigLoader()
     hf_token = config_loader.get("HF_TOKEN", "")
     if not hf_token:
@@ -315,7 +456,7 @@ def list_models(
             username = user_info["name"]
             console.print(f"[blue]Listing models for: {username}[/blue]\n")
 
-        models = api.list_models(author=username, limit=limit)
+        models = list(api.list_models(author=username, limit=limit))
 
         for i, model in enumerate(models, 1):
             private_badge = "[red](private)[/red]" if model.private else "[green](public)[/green]"

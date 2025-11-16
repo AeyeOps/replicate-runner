@@ -16,6 +16,7 @@ dependencies = [
     "pyyaml>=6.0.0",
     "replicate>=0.25.0",
     "huggingface-hub>=0.20.0",
+    "ratelimit>=2.2.1",
 ]
 
 [project.scripts]

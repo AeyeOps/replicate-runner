@@ -34,12 +34,25 @@ class ConfigLoader:
         Load all YAML files from `config` directory (under this project).
         Merge them if necessary.
         """
-        config_dir = Path(__file__).parent.parent / "config"
+        package_config_dir = Path(__file__).parent / "config"
+        cwd = Path.cwd()
+        search_dirs = [package_config_dir]
+        for candidate in [
+            cwd / "config",
+            cwd.parent / "config",
+            cwd.parent.parent / "config",
+        ]:
+            if candidate not in search_dirs:
+                search_dirs.append(candidate)
+
         merged_config = {}
-        for yaml_file in config_dir.glob("*.yaml"):
-            with open(yaml_file, "r", encoding="utf-8") as f:
-                data = yaml.safe_load(f) or {}
-                merged_config.update(data)
+        for directory in search_dirs:
+            if not directory.exists():
+                continue
+            for yaml_file in sorted(directory.glob("*.yaml")):
+                with open(yaml_file, "r", encoding="utf-8") as f:
+                    data = yaml.safe_load(f) or {}
+                    merged_config.update(data)
         return merged_config
 
     def get(self, key, default=None):

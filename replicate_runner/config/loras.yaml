@@ -1,0 +1,66 @@
+loras:
+  andie_v1_1:
+    name: "Andie v1.1"
+    hf_repo: "steveant/andie-lora-v1.1"
+    lora_weights: "huggingface.co/steveant/andie-lora-v1.1"
+    trigger: "andie"
+    description: "Studio portrait LoRA tuned for soft, cinematic results."
+    default_prompt: "{trigger}, a woman, couture wardrobe, cinematic portrait, shallow depth of field"
+    base_images:
+      - "assets/base_images/andie/reference_01.jpg"
+      - "assets/base_images/andie/reference_02.jpg"
+  demi_v1_0:
+    name: "Demi v1.0"
+    hf_repo: "steveant/demi-lora-v1.0"
+    lora_weights: "huggingface.co/steveant/demi-lora-v1.0"
+    trigger: "demi"
+    description: "Original Demi training run – balanced and versatile."
+    default_prompt: "{trigger}, a woman, candid street portrait at dusk, cinematic realism"
+    base_images:
+      - "assets/base_images/demi/reference_v10.jpg"
+  demi_v1_3:
+    name: "Demi v1.3"
+    hf_repo: "steveant/demi-lora-v1.3"
+    lora_weights: "huggingface.co/steveant/demi-lora-v1.3"
+    trigger: "demi"
+    description: "Sharper highlights and contrast for editorial looks."
+    default_prompt: "{trigger}, a woman, editorial studio lighting, iso 100, phase one"
+    base_images: []
+  demi_v1_5:
+    name: "Demi v1.5"
+    hf_repo: "steveant/demi-lora-v1.5"
+    lora_weights: "huggingface.co/steveant/demi-lora-v1.5"
+    trigger: "demi"
+    description: "Latest Demi weights pushing stylized neon moods."
+    default_prompt: "{trigger}, a woman, neon reflections, rainy cyberpunk street, ultrareal"
+    base_images:
+      - "assets/base_images/demi/reference_v15.jpg"
+  alexandra_v1_0:
+    name: "Alexandra v1.0"
+    hf_repo: "steveant/alexandra-lora-v1.0"
+    lora_weights: "huggingface.co/steveant/alexandra-lora-v1.0"
+    trigger: "alexandra"
+    description: "Alexandra LoRA with moody Rembrandt lighting."
+    default_prompt: "{trigger}, a woman, rembrandt lighting, ornate atelier, fine art"
+    base_images:
+      - "assets/base_images/alexandra/reference_01.jpg"
+
+lora_collections:
+  studio_muses:
+    description: "Primary LoRAs we iterate on for FLUX portrait studies."
+    default_prompt: "{trigger}, a woman, portrait, beautiful rim lighting, Kodak Portra 400"
+    tags: ["portrait", "flux", "internal"]
+    loras:
+      - andie_v1_1
+      - demi_v1_0
+      - demi_v1_3
+      - demi_v1_5
+      - alexandra_v1_0
+  demi_focus:
+    description: "Only Demi variations for A/B testing."
+    default_prompt: "{trigger}, a woman, avant garde fashion shoot"
+    tags: ["demi", "ab-test"]
+    loras:
+      - demi_v1_0
+      - demi_v1_3
+      - demi_v1_5

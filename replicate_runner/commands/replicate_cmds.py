@@ -1,15 +1,62 @@
 import ast
+import os
+import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import Any, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 from urllib.parse import urlparse
 
 import replicate
+from ratelimit import limits, sleep_and_retry
 from replicate.helpers import FileOutput
 import typer
+import yaml
 from rich.console import Console
 
+from replicate_runner.lora_catalog import LoraEntry, load_lora_catalog, resolve_collection
+
 console = Console()
+
+DEFAULT_MODEL_REF = "lucataco/flux-dev-lora"
+DEFAULT_PROMPT_TEMPLATE = (
+    "{trigger}, a woman, portrait, dramatic studio lighting, photorealistic, 85mm lens"
+)
+DEFAULT_RUN_SETTINGS = {
+    "loops": 10,
+    "images_per_loop": 4,
+}
+DEFAULT_MODEL_PARAMS = {
+    "go_fast": False,
+    "guidance": 4.0,
+    "lora_scale": 1.2,
+    "prompt_strength": 0.5,
+    "num_outputs": 4,
+    "num_inference_steps": 40,
+    "aspect_ratio": "9:16",
+    "output_format": "webp",
+    "output_quality": 90,
+    "seed": 0,
+    "disable_safety_checker": True,
+}
+
+DEFAULT_RATE_CALLS = 4
+DEFAULT_RATE_PERIOD = 5
+
+
+def _load_rate_limits() -> Tuple[int, int]:
+    def _env_int(key: str, default: int) -> int:
+        try:
+            return max(1, int(os.environ.get(key, default)))
+        except (TypeError, ValueError):
+            return default
+
+    return (
+        _env_int("REPLICATE_RATE_CALLS", DEFAULT_RATE_CALLS),
+        _env_int("REPLICATE_RATE_PERIOD", DEFAULT_RATE_PERIOD),
+    )
+
+
+RATE_LIMIT_CALLS, RATE_LIMIT_PERIOD = _load_rate_limits()
 
 
 def parse_param_value(value: str) -> Any:
@@ -122,7 +169,8 @@ def persist_file_outputs(outputs: List[FileOutput], model_ref: str) -> List[Path
 
     safe_model = model_ref.replace("/", "_").replace(":", "__")
     timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
-    dest_dir = Path("output") / f"{safe_model}_{timestamp}"
+    unique_suffix = uuid.uuid4().hex[:6]
+    dest_dir = Path("output") / f"{safe_model}_{timestamp}_{unique_suffix}"
     dest_dir.mkdir(parents=True, exist_ok=True)
 
     saved_paths: List[Path] = []
@@ -137,6 +185,12 @@ def persist_file_outputs(outputs: List[FileOutput], model_ref: str) -> List[Path
     return saved_paths
 
 
+@sleep_and_retry
+@limits(calls=RATE_LIMIT_CALLS, period=RATE_LIMIT_PERIOD)
+def _rate_limited_run(client: replicate.Client, model_ref: str, input_params: dict):
+    return client.run(model_ref, input=input_params)
+
+
 def run_replicate_model(
     token: str,
     model_ref: str,
@@ -148,11 +202,141 @@ def run_replicate_model(
     console.print(f"Running [bold]{model_ref}[/bold]")
     console.print(f"Parameters: {input_params}")
 
-    prediction = client.run(model_ref, input=input_params)
-    return prediction
+    return _rate_limited_run(client, model_ref, input_params)
 
 
 app = typer.Typer()
+
+
+def _pick_loras_for_template(
+    catalog, collection: Optional[str], explicit_keys: List[str]
+) -> Tuple[List[LoraEntry], Optional[str]]:
+    selected: List[LoraEntry] = []
+    seen: Set[str] = set()
+    collection_prompt: Optional[str] = None
+
+    if collection:
+        try:
+            collection_meta, entries = resolve_collection(catalog, collection)
+        except KeyError as exc:
+            console.print(f"[red]{exc}[/red]")
+            raise typer.Exit(1)
+        collection_prompt = collection_meta.default_prompt
+        for entry in entries:
+            if entry.key not in seen:
+                selected.append(entry)
+                seen.add(entry.key)
+
+    for key in explicit_keys:
+        entry = catalog.loras.get(key)
+        if not entry:
+            console.print(f"[yellow]Unknown LoRA '{key}' skipped.[/yellow]")
+            continue
+        if entry.key not in seen:
+            selected.append(entry)
+            seen.add(entry.key)
+
+    if not selected:
+        selected = list(catalog.loras.values())
+        if not selected:
+            console.print(
+                "[red]No LoRAs configured. Populate config/loras.yaml before generating templates.[/red]"
+            )
+            raise typer.Exit(1)
+
+    return selected, collection_prompt
+
+
+def _build_run_template(
+    loras: List[LoraEntry],
+    collection: Optional[str],
+    collection_prompt: Optional[str],
+) -> Dict[str, Any]:
+    prompt_template = collection_prompt or DEFAULT_PROMPT_TEMPLATE
+    lora_section: List[Dict[str, Any]] = []
+    predictions: List[Dict[str, Any]] = []
+
+    for entry in loras:
+        lora_section.append(
+            {
+                "key": entry.key,
+                "name": entry.name,
+                "trigger": entry.trigger,
+                "hf_repo": entry.repo_id,
+                "lora_weights": entry.lora_weights,
+                "default_prompt": entry.default_prompt or prompt_template,
+            }
+        )
+        predictions.append(
+            {
+                "name": f"{entry.name} sweep",
+                "lora": entry.key,
+                "prompt": entry.default_prompt or prompt_template,
+                "params": {
+                    "hf_lora": entry.repo_id,
+                    "lora_weights": entry.lora_weights,
+                },
+            }
+        )
+
+    return {
+        "model": DEFAULT_MODEL_REF,
+        "version": None,
+        "collection": collection,
+        "prompt_template": prompt_template,
+        "run_settings": DEFAULT_RUN_SETTINGS,
+        "defaults": {
+            "params": DEFAULT_MODEL_PARAMS,
+        },
+        "loras": lora_section,
+        "predictions": predictions,
+    }
+
+
+@app.command(name="init-run-file")
+def init_run_file(
+    output: Path = typer.Argument(
+        Path("replicate-run.yaml"),
+        help="Where to write the generated YAML template.",
+    ),
+    collection: Optional[str] = typer.Option(
+        None,
+        "--collection",
+        help="Name of the LoRA collection to pre-populate with.",
+    ),
+    lora: Optional[List[str]] = typer.Option(
+        None,
+        "--lora",
+        help="Specific LoRA keys to include (repeat flag for multiples).",
+    ),
+    overwrite: bool = typer.Option(
+        False,
+        "--overwrite",
+        help="Allow overwriting an existing file.",
+    ),
+):
+    """Generate a multi-run YAML template inspired by t.py's batch script."""
+
+    catalog = load_lora_catalog()
+    explicit_keys = lora or []
+    selected_loras, collection_prompt = _pick_loras_for_template(
+        catalog, collection, explicit_keys
+    )
+    template = _build_run_template(selected_loras, collection, collection_prompt)
+
+    if output.exists() and not overwrite:
+        console.print(
+            f"[red]File {output} already exists. Pass --overwrite to replace it.[/red]"
+        )
+        raise typer.Exit(1)
+
+    output.parent.mkdir(parents=True, exist_ok=True)
+    with open(output, "w", encoding="utf-8") as fh:
+        yaml.safe_dump(template, fh, sort_keys=False, allow_unicode=True)
+
+    console.print(
+        f"[green]Generated replicate run template with {len(selected_loras)} LoRAs at {output}[/green]"
+    )
 
 
 @app.command(name="run-model")

@@ -53,8 +53,36 @@ Create `.env` in project root:
 ```bash
 REPLICATE_API_TOKEN=r8_your_token_here
 HF_TOKEN=hf_your_token_here
+LORA_IMAGE_VIEWER=/usr/bin/eog   # optional: viewer path for `hf loras view-images`
+REPLICATE_RATE_CALLS=4           # optional: max Replicate runs per period
+REPLICATE_RATE_PERIOD=5          # optional: seconds for the throttle period
 ```
 If `HF_TOKEN` (or `HF_API_TOKEN`) is set, the `replicate run-model` command automatically injects it as `hf_api_token` whenever you point `extra_lora`/`hf_lora`/`lora_weights` at `huggingface.co`, so private LoRAs just work.
+The CLI also enforces a built-in `ratelimit` (default 4 calls every 5 seconds) to avoid Replicate's "burst of 5" throttling; tune it via the env vars above if your account allows more throughput.
+
+### Configure LoRA collections
+The CLI now ships with `replicate_runner/config/loras.yaml`, which defines named LoRA collections.
+You can edit that file directly or override it by creating a `config/loras.yaml` in your workspace.
+
+```yaml
+loras:
+  andie_v1_1:
+    name: "Andie v1.1"
+    hf_repo: "steveant/andie-lora-v1.1"
+    lora_weights: "huggingface.co/steveant/andie-lora-v1.1"
+    trigger: "andie"
+    base_images:
+      - "/home/user/Pictures/andie/001.jpg"
+
+lora_collections:
+  studio_muses:
+    description: "Primary LoRAs we iterate on"
+    loras:
+      - andie_v1_1
+      - demi_v1_3
+```
+
+`hf loras` commands read from that catalog so the data stays versioned alongside the repo.
 
 ## Usage Examples
 
@@ -75,6 +103,7 @@ Version pinning options (use only one):
 If you omit a version, the latest configured on Replicate is used.
 
 Successful runs automatically download any `FileOutput`s (images, etc.) into `output/<model>_<timestamp>/` so you can inspect results without copying URLs manually.
+Each run now gets a unique folder suffix, so multiple parallel invocations never trample each other's files.
 
 ### Publish LoRA to HuggingFace
 ```bash
@@ -107,7 +136,7 @@ Result: 1 model file + 2 best sample images
 ### List Your HuggingFace Models
 ```bash
 replicate-runner hf list-models
-# or
+# or (optionally limit results)
 replicate-runner hf list-models --user your-username --limit 20
 ```
 
@@ -120,6 +149,37 @@ Override anything via environment variables:
 ```bash
 PROMPT="a studio portrait of TOK" LORA_SCALE=0.9 ./scripts/run_flux_example.sh
 ```
+
+### Inspect LoRA Collections
+```bash
+# List collection names defined in config/loras.yaml
+replicate-runner hf loras list
+
+# Print LoRA details, triggers, and default prompts for a collection
+replicate-runner hf loras show studio_muses
+
+# Launch your Ubuntu viewer (set LORA_IMAGE_VIEWER) with reference images
+replicate-runner hf loras view-images studio_muses
+
+# Skip launching the viewer and just print the resolved paths
+replicate-runner hf loras view-images studio_muses --dry-run
+```
+
+### Generate Batch Run Templates
+```bash
+# Create replicate-run.yaml for the entire studio_muses collection
+replicate-runner replicate init-run-file replicate-run.yaml --collection studio_muses
+
+# Combine a collection with explicit LoRA keys and overwrite the file if needed
+replicate-runner replicate init-run-file runs/demi.yaml \
+  --collection demi_focus \
+  --lora andie_v1_1 \
+  --overwrite
+```
+
+Each generated YAML file includes `run_settings` (loops + images per loop), a `defaults.params`
+section mirroring the inputs we pass to Replicate in `t.py`, the curated list of LoRAs, and a
+`predictions` array pairing each LoRA with its HF repo + default prompt so you can batch runs.
 
 ### Type Inference
 Automatic conversion from CLI strings to Python types:
