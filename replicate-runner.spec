@@ -1,13 +1,24 @@
 # -*- mode: python ; coding: utf-8 -*-
 
+from PyInstaller.utils.hooks import collect_data_files, copy_metadata
+
 block_cipher = None
+
+package_data = collect_data_files(
+    'replicate_runner',
+    includes=['config/*.yaml'],
+)
+metadata_packages = ['replicate', 'huggingface_hub', 'typer', 'rich', 'python-dotenv', 'pyyaml']
+metadata_data = []
+for pkg in metadata_packages:
+    metadata_data += copy_metadata(pkg)
 
 a = Analysis(
     ['replicate_runner/main.py'],
     pathex=[],
     binaries=[],
-    datas=[],
-    hiddenimports=[
+    datas=package_data + metadata_data,
+hiddenimports=[
         'replicate_runner',
         'replicate_runner.main',
         'replicate_runner.config_loader',
@@ -15,6 +26,13 @@ a = Analysis(
         'replicate_runner.commands',
         'replicate_runner.commands.replicate_cmds',
         'replicate_runner.commands.hf_cmds',
+        'replicate_runner.commands.profile_cmds',
+        'replicate_runner.commands.prompt_cmds',
+        'replicate_runner.commands.explore_cmds',
+        'replicate_runner.persona',
+        'replicate_runner.profile_runtime',
+        'replicate_runner.profiles',
+        'replicate_runner.prompt_engine',
         'typer',
         'rich',
         'rich.console',
@@ -33,6 +51,7 @@ a = Analysis(
         'huggingface_hub.hf_api',
         'httpx',
         'pydantic',
+        'importlib.metadata',
     ],
     hookspath=[],
     hooksconfig={},

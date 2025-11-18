@@ -19,9 +19,23 @@ from replicate_runner.lora_catalog import (
 )
 
 console = Console()
-app = typer.Typer()
-loras_app = typer.Typer(help="Inspect locally configured LoRA collections.")
+app = typer.Typer(invoke_without_command=True)
+loras_app = typer.Typer(help="Inspect locally configured LoRA collections.", invoke_without_command=True)
 app.add_typer(loras_app, name="loras")
+
+
+@app.callback()
+def hf_root(ctx: typer.Context):
+    if ctx.invoked_subcommand is None:
+        console.print(ctx.get_help())
+        raise typer.Exit()
+
+
+@loras_app.callback()
+def loras_root(ctx: typer.Context):
+    if ctx.invoked_subcommand is None:
+        console.print(ctx.get_help())
+        raise typer.Exit()
 
 
 def _format_lora_entry(entry: LoraEntry) -> List[str]:

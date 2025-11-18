@@ -1,7 +1,15 @@
-.PHONY: clean sync build install standalone help all
 
-# Default target
-all: sync build
+.PHONY: clean sync build install standalone standalone-env help all
+
+.DEFAULT_GOAL := help
+
+PYTHON ?= python3
+STANDALONE_VENV := .venv-standalone
+STANDALONE_BIN := $(STANDALONE_VENV)/bin
+STANDALONE_PIP := $(STANDALONE_BIN)/pip
+STANDALONE_PYINSTALLER := $(STANDALONE_BIN)/pyinstaller
+STANDALONE_ARTIFACT := dist/replicate-runner
+STANDALONE_DEPLOY := /opt/bin/replicate-runner
 
 help:
 	@echo "Available targets:"
@@ -10,7 +18,8 @@ help:
 	@echo "  build       - Build the package using uv"
 	@echo "  install     - Install in development mode using uv"
 	@echo "  standalone  - Create standalone executable with PyInstaller"
-	@echo "  all         - Sync and build (default)"
+	@echo "  all         - Sync and build"
+	@echo "  help        - Show this menu (default)"
 
 clean:
 	@echo "Cleaning build artifacts..."
@@ -40,7 +49,23 @@ install: sync
 	uv pip install -e .
 	@echo "Installation complete."
 
-standalone: clean
-	@echo "Creating standalone executable with PyInstaller..."
-	uv run pyinstaller replicate-runner.spec
-	@echo "Standalone executable created: dist/replicate-runner.exe"
+standalone-env:
+	@if [ ! -d "$(STANDALONE_VENV)" ]; then \
+		echo "Creating isolated virtualenv at $(STANDALONE_VENV)..."; \
+		$(PYTHON) -m venv $(STANDALONE_VENV); \
+	fi
+	@echo "Syncing standalone build dependencies..."
+	@$(STANDALONE_PIP) install --upgrade pip wheel setuptools >/dev/null
+	@$(STANDALONE_PIP) install --upgrade pyinstaller >/dev/null
+	@$(STANDALONE_PIP) install --upgrade -e . >/dev/null
+
+standalone: clean standalone-env
+	@echo "Building standalone executable with PyInstaller..."
+	@$(STANDALONE_PYINSTALLER) --clean replicate-runner.spec
+	@if [ -f "$(STANDALONE_ARTIFACT)" ]; then \
+		echo "Deploying standalone binary to $(STANDALONE_DEPLOY)..."; \
+		cp -f $(STANDALONE_ARTIFACT) $(STANDALONE_DEPLOY); \
+		echo "Standalone executable copied to $(STANDALONE_DEPLOY)"; \
+	else \
+		echo "[WARN] Standalone binary $(STANDALONE_ARTIFACT) not found"; \
+	fi

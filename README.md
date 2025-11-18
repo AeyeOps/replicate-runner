@@ -84,6 +84,22 @@ lora_collections:
 
 `hf loras` commands read from that catalog so the data stays versioned alongside the repo.
 
+### Profiles & Prompt Wizard
+
+Replicate Runner now ships with hybrid profiles and a guided prompt wizard so you can save your favorite setups and reuse them in a single flag:
+
+- **Configuration layers:** defaults live in `replicate_runner/config/profiles.yaml`, workspace overrides go in `./config/profiles.yaml`, and user overrides are written to `${XDG_CONFIG_HOME:-~/.config}/replicate-runner/profiles.yaml`. Definitions merge per profile so you can keep shared templates in the repo and personal tweaks locally.
+- **`profile` commands:** `profile list/show` surface merged definitions with provenance, `profile save --scope package|workspace|user` updates only the provided fields (with `--unset field.path` to drop keys), and `profile run` resolves the template, injects persona actions, and executes the Replicate call with any `--model/--lora/--subject/--param` overrides you supply. Example:
+  ```bash
+  replicate-runner profile run audra \
+    --subject "a couture street portrait" \
+    --mood "electric dusk" \
+    --lighting "neon rim"
+  ```
+- **Persona actions:** Templates can opt into `{persona_action}` to splice in contextual motion like `twirling a transparent umbrella in the rain`. Each profile can set `defaults.persona_tokens` to bias the random chooser, or disable the feature entirely via `defaults.persona_enabled: false`. At runtime, use `--persona-action/--no-persona-action` to override the profile default—when disabled, `{persona_action}` collapses to empty unless you supply `--action`, which is also used for `{action}` placeholders. Injected text is annotated with the literal `(persona_action)` marker so downstream tooling can strip or replace it.
+- **Prompt wizard:** `replicate-runner prompt wizard --profile audra` walks through missing inputs (model, LoRA, subject, etc.), renders the final prompt, prints a ready-to-run command, and can optionally execute via `--run`. Passing `--no-interactive` enforces flags-only runs, while `--base-model-only` confirms you want to drop the LoRA.
+- **Guided discovery:** `replicate-runner explore models` queries Replicate’s public catalog (with optional `--search` and `--save-profile` to capture what you find), and `replicate-runner explore loras` inspects the bundled `loras.yaml` plus Hugging Face metadata so you can seed new profiles straight from your collection.
+
 ## Usage Examples
 
 ### Run FLUX with LoRA
@@ -104,6 +120,7 @@ If you omit a version, the latest configured on Replicate is used.
 
 Successful runs automatically download any `FileOutput`s (images, etc.) into `output/<model>_<timestamp>/` so you can inspect results without copying URLs manually.
 Each run now gets a unique folder suffix, so multiple parallel invocations never trample each other's files.
+If your prompt references one of your persona LoRAs (e.g., Andie or Audra), the CLI appends a random action suggestion tagged with `(persona_action)` so batched runs get natural variety without editing prompts by hand.
 
 ### Publish LoRA to HuggingFace
 ```bash

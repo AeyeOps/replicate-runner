@@ -14,6 +14,7 @@ import yaml
 from rich.console import Console
 
 from replicate_runner.lora_catalog import LoraEntry, load_lora_catalog, resolve_collection
+from replicate_runner.persona import PERSONA_ACTION_MARKER, PersonaActionResolver
 
 console = Console()
 
@@ -41,6 +42,8 @@ DEFAULT_MODEL_PARAMS = {
 
 DEFAULT_RATE_CALLS = 4
 DEFAULT_RATE_PERIOD = 5
+
+persona_resolver = PersonaActionResolver()
 
 
 def _load_rate_limits() -> Tuple[int, int]:
@@ -205,7 +208,14 @@ def run_replicate_model(
     return _rate_limited_run(client, model_ref, input_params)
 
 
-app = typer.Typer()
+app = typer.Typer(invoke_without_command=True)
+
+
+@app.callback()
+def replicate_root(ctx: typer.Context):
+    if ctx.invoked_subcommand is None:
+        console.print(ctx.get_help())
+        raise typer.Exit()
 
 
 def _pick_loras_for_template(
@@ -445,6 +455,18 @@ def run_model(
         console.print(
             "[blue]Injected HuggingFace token for private LoRA download.[/blue]"
         )
+
+    prompt_value = input_params.get("prompt")
+    if isinstance(prompt_value, str):
+        lower_prompt = prompt_value.lower()
+        if any(token in lower_prompt for token in ("andie", "audra")) and PERSONA_ACTION_MARKER.lower() not in lower_prompt:
+            action = persona_resolver.pick_any()
+            if action:
+                augmented = f"{prompt_value}, while she is {action} {PERSONA_ACTION_MARKER}"
+                input_params["prompt"] = augmented
+                console.print(
+                    f"[blue]Added random persona action to prompt:[/blue] {augmented}"
+                )
 
     try:
         output = run_replicate_model(

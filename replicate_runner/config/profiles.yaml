@@ -1,0 +1,19 @@
+profiles:
+  audra:
+    description: "Couture muse tuned for Flux"
+    model: "black-forest-labs/flux-dev-lora"
+    version: null
+    lora: "huggingface.co/steveant/audra-flux-v1"
+    trigger: "audra"
+    prompt_template: "{trigger}, couture street scene, {persona_action}"
+    defaults:
+      params:
+        lora_scale: 1.2
+        num_outputs: 4
+        num_inference_steps: 40
+        aspect_ratio: "9:16"
+        guidance: 4.0
+      subject: "a couture street portrait"
+      persona_tokens:
+        - "audra"
+      persona_enabled: true

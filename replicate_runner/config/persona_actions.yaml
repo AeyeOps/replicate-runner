@@ -1,0 +1,21 @@
+actions:
+  - tokens: ["andie", "audra", "ariel"]
+    text: "twirling a transparent umbrella in the rain"
+  - tokens: ["andie", "audra"]
+    text: "balancing on subway stairs while tying her shoe"
+  - tokens: ["andie", "audra", "stevie"]
+    text: "sketching neon fashion concepts on a tablet"
+  - tokens: ["audra"]
+    text: "checking vintage film on a retro camera"
+  - tokens: ["ariel", "audra"]
+    text: "sipping espresso outside a Parisian cafe"
+  - tokens: ["andie", "stevie"]
+    text: "reading choreography notes beside a boombox"
+  - tokens: ["audra", "stevie"]
+    text: "adjusting a silk scarf caught in the wind"
+  - tokens: ["audra", "ariel"]
+    text: "stepping off a tram with a bouquet of flowers"
+  - tokens: ["audra"]
+    text: "spinning through a splash of fountain mist"
+  - tokens: ["andie", "audra", "stevie"]
+    text: "tossing her hair as she steps into a spotlight"
