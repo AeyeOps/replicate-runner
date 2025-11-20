@@ -22,12 +22,46 @@ from replicate_runner.profiles import ProfileManager, ProfileSource, ResolvedPro
 console = Console()
 app = typer.Typer(help="Guided prompt wizard", invoke_without_command=True)
 
+DEFAULT_BASE_MODEL = "black-forest-labs/flux-dev-lora"
+BASE_MODEL_GUARDS = {DEFAULT_BASE_MODEL}
+
 
 @app.callback()
 def prompt_root(ctx: typer.Context):
     if ctx.invoked_subcommand is None:
         console.print(ctx.get_help())
         raise typer.Exit()
+
+
+def _normalize_lora_value(value: Optional[str]) -> Optional[str]:
+    if not value:
+        return value
+    raw = value.strip()
+    if not raw:
+        return None
+    lowered = raw.lower()
+    if lowered.startswith("http://") or lowered.startswith("https://"):
+        return raw
+    if "huggingface.co/" in lowered:
+        return raw
+    if "://" in raw:
+        return raw
+    if raw.endswith(".safetensors") or raw.endswith(".bin"):
+        return raw
+    if "/" in raw:
+        return f"huggingface.co/{raw}"
+    return raw
+
+
+def _maybe_swap_model_and_lora(values: Dict[str, Optional[str]]):
+    model = values.get("model")
+    lora = values.get("lora")
+    if lora and lora in BASE_MODEL_GUARDS and model and model not in BASE_MODEL_GUARDS:
+        console.print(
+            f"[yellow]LoRA input '{lora}' looks like a base model. Swapping so the Replicate model is '{lora}' and the LoRA uses '{model}'.[/yellow]"
+        )
+        values["model"], values["lora"] = lora, model
+    values["lora"] = _normalize_lora_value(values.get("lora"))
 
 
 def _require_value(label: str, current: Optional[str], no_interactive: bool) -> str:
@@ -54,6 +88,19 @@ def _build_profile_stub(
     return ResolvedProfile(name="<wizard>", data=data, sources=[ProfileSource(scope="wizard", path=Path("<wizard>"))])
 
 
+def _prompt_model_value(existing: Optional[str], resolved: Optional[ResolvedProfile], no_interactive: bool) -> str:
+    if existing:
+        return existing
+    if resolved and resolved.data.get("model"):
+        return resolved.data.get("model")
+    if no_interactive:
+        return DEFAULT_BASE_MODEL
+    return typer.prompt(
+        "Replicate model (owner/name)",
+        default=DEFAULT_BASE_MODEL,
+    ).strip()
+
+
 def _determine_prompt_fields(
     template: str,
     resolved: Optional[ResolvedProfile],
@@ -71,9 +118,7 @@ def _determine_prompt_fields(
     tokens = extract_tokens(template)
     data = resolved.data if resolved else {}
 
-    model_value = model or data.get("model")
-    if not model_value:
-        model_value = _require_value("Replicate model (owner/name)", None, no_interactive)
+    model_value = _prompt_model_value(model, resolved, no_interactive)
 
     lora_value = lora or data.get("lora")
     if not base_model_only and not lora_value:
@@ -104,7 +149,7 @@ def _determine_prompt_fields(
     if "lighting" in tokens and lighting_value is None and not no_interactive:
         lighting_value = typer.prompt("Lighting", default="").strip() or None
 
-    return {
+    values = {
         "model": model_value,
         "lora": lora_value,
         "subject": subject_value,
@@ -113,6 +158,9 @@ def _determine_prompt_fields(
         "camera": camera_value,
         "lighting": lighting_value,
     }
+
+    _maybe_swap_model_and_lora(values)
+    return values
 
 
 @app.command("wizard")
